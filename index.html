@@ -1,0 +1,1835 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AeroTest 1.1: Misión Atmósfera & ISA</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Rajdhani', sans-serif;
+            background: #0f172a;
+            color: #f8fafc;
+            user-select: none;
+            overflow-x: hidden;
+        }
+        .font-hud {
+            font-family: 'Orbitron', monospace;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #38bdf8;
+            border-radius: 4px;
+        }
+
+        /* Map Path Animations */
+        .node-pulse {
+            animation: pulse-glow 2s infinite alternate;
+        }
+        @keyframes pulse-glow {
+            0% { box-shadow: 0 0 10px #38bdf8, 0 0 20px #38bdf8; }
+            100% { box-shadow: 0 0 20px #0284c7, 0 0 35px #0284c7; }
+        }
+
+        .sky-bg {
+            background: linear-gradient(180deg, #0284c7 0%, #0f172a 100%);
+        }
+
+        /* Glassmorphic panels */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+        }
+
+        .map-node-completed { transform: scale(1.04); }
+        .map-node-completed::after {
+            content: "✓";
+            position: absolute;
+            top: -8px;
+            left: -8px;
+            width: 22px;
+            height: 22px;
+            border-radius: 999px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #10b981;
+            color: #fff;
+            font-weight: 900;
+            font-size: 12px;
+            border: 2px solid #0f172a;
+        }
+        .map-connector {
+            position: absolute;
+            height: 4px;
+            border-radius: 99px;
+            background: linear-gradient(90deg, rgba(56,189,248,.85), rgba(16,185,129,.75));
+            transform-origin: left center;
+            pointer-events: none;
+            opacity: .7;
+        }
+        .player-badge { animation: float-badge 2.5s ease-in-out infinite; }
+        @keyframes float-badge {
+            0%,100% { transform: translateY(0); }
+            50% { transform: translateY(-4px); }
+        }
+
+        /* Canvas styling */
+        canvas {
+            background: radial-gradient(circle, #1e293b 0%, #0f172a 100%);
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+
+        .brain-test-card {
+            transition: all 0.2s ease-in-out;
+        }
+        .brain-test-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .drag-item {
+            cursor: grab;
+        }
+        .drag-item:active {
+            cursor: grabbing;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between sky-bg text-slate-100">
+
+    <!-- TOP HEADER / HUD -->
+    <header class="glass-panel sticky top-0 z-50 px-6 py-3 flex justify-between items-center shadow-lg border-b border-sky-500/30">
+        <div class="flex items-center space-x-3">
+            <i class="fa-solid font-hud fa-plane-departure text-sky-400 text-2xl"></i>
+            <div>
+                <h1 class="font-hud text-lg font-bold tracking-wider text-sky-300">AEROTEST <span class="text-xs text-amber-400">ATMÓSFERA & ISA</span></h1>
+                <p class="text-xs text-slate-400">Manual de Aviación Civíl (Pág. 1-3 | Cap. 1.1)</p>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-6">
+            <div class="text-center">
+                <span class="text-xs uppercase text-slate-400 font-bold block">Estrellas</span>
+                <span class="font-hud text-amber-400 text-xl font-bold flex items-center justify-center gap-1">
+                    <i class="fa-solid fa-star text-sm"></i> <span id="total-stars">0</span>/90
+                </span>
+            </div>
+            <div class="text-center">
+                <span class="text-xs uppercase text-slate-400 font-bold block">Nivel</span>
+                <span id="current-level-display" class="font-hud text-sky-400 text-xl font-bold">1 / 30</span>
+            </div>
+            <div class="text-center hidden sm:block">
+                <span class="text-xs uppercase text-slate-400 font-bold block">Puntos</span>
+                <span id="total-score" class="font-hud text-emerald-400 text-xl font-bold">0</span>
+            </div>
+            <button id="btn-profile" class="px-3 py-2 rounded-lg bg-slate-800 border border-sky-500/30 text-sky-300 hover:bg-slate-700 transition flex items-center gap-2">
+                <i class="fa-solid fa-user-astronaut"></i>
+                <span id="player-name-short">Cadete</span>
+            </button>
+            <button id="btn-audio-toggle" class="p-2 rounded-lg bg-slate-800 border border-slate-700 text-sky-400 hover:text-white hover:bg-slate-700 transition">
+                <i class="fa-solid fa-volume-high text-lg"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN APP CONTAINER -->
+    <main class="flex-1 max-w-6xl w-full mx-auto p-4 flex flex-col justify-center items-center relative">
+
+        <!-- MAP VIEW (Candy Crush style path) -->
+        <div id="view-map" class="w-full flex flex-col items-center py-6">
+            <div class="text-center mb-6">
+                <h2 class="font-hud text-3xl text-sky-300 font-bold mb-2">Ruta de Aprendizaje Aeronáutico</h2>
+                <p class="text-slate-300 max-w-xl mx-auto text-sm">
+                    Avanza nivel por nivel superando exámenes de teoría interactiva estilo <span class="text-amber-400 font-bold">Brain Test</span> y misiones de <span class="text-sky-400 font-bold">Simulación de Vuelo</span>.
+                </p>
+                <div class="flex flex-wrap justify-center items-center gap-4 mt-3 text-xs">
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-amber-500 inline-block"></span> Teoría Interactiva (10)</span>
+                    <span class="flex items-center gap-1"><span class="w-3 h-3 rounded-full bg-sky-500 inline-block"></span> Interactivo / Acción (20)</span>
+                </div>
+
+                <div class="w-full max-w-2xl glass-panel rounded-2xl p-4 mt-5">
+                    <div class="flex justify-between items-center mb-2">
+                        <div>
+                            <p class="text-xs text-slate-400 uppercase font-bold">Progreso de misión</p>
+                            <p id="map-progress-text" class="font-hud text-sky-300 text-sm">0 / 30 niveles</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xs text-slate-400 uppercase font-bold">Rango</p>
+                            <p id="player-rank" class="font-hud text-amber-400 font-bold">CADETE</p>
+                        </div>
+                    </div>
+                    <div class="h-3 bg-slate-950 rounded-full overflow-hidden border border-slate-700">
+                        <div id="map-progress-bar" class="h-full bg-gradient-to-r from-sky-500 to-emerald-400 transition-all duration-500" style="width:0%"></div>
+                    </div>
+                    <div class="flex justify-between mt-2 text-xs text-slate-400">
+                        <span><i class="fa-solid fa-check text-emerald-400"></i> <span id="completed-count">0</span> completados</span>
+                        <span><i class="fa-solid fa-star text-amber-400"></i> <span id="total-stars-map">0</span>/90</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Candy Crush Map Container -->
+            <div class="relative w-full max-w-2xl bg-slate-900/80 rounded-3xl p-8 border border-sky-500/20 shadow-2xl overflow-hidden min-h-[700px] flex flex-col-reverse justify-between items-center my-4">
+                
+                <!-- Background Decorative SVG Flight Line -->
+                <svg class="absolute inset-0 w-full h-full pointer-events-none stroke-sky-500/30" stroke-dasharray="6,6" stroke-width="3" id="map-svg-path">
+                    <!-- Path dynamically drawn or fixed curvy line -->
+                </svg>
+
+                <div id="map-nodes-container" class="relative z-10 w-full grid grid-cols-3 sm:grid-cols-4 gap-6 place-items-center">
+                    <!-- Nodes 1 to 30 will be generated dynamically by JS -->
+                </div>
+            </div>
+        </div>
+
+        <!-- GAME LEVEL SCREEN -->
+        <div id="view-game" class="w-full hidden flex-col items-center">
+            
+            <!-- Level HUD Top Bar -->
+            <div class="w-full glass-panel rounded-2xl p-4 mb-4 flex flex-wrap justify-between items-center gap-4">
+                <button id="btn-back-to-map" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl text-sky-300 font-bold flex items-center gap-2 transition">
+                    <i class="fa-solid fa-map"></i> Volver al Mapa
+                </button>
+                
+                <div class="text-center flex-1">
+                    <span id="game-level-tag" class="text-xs uppercase px-3 py-1 rounded-full font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">TEORÍA INTERACTIVA</span>
+                    <h2 id="game-title" class="font-hud text-xl text-sky-300 font-bold mt-1">Título del Nivel</h2>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <button id="btn-hint" class="px-3 py-2 bg-amber-500/20 border border-amber-500/50 hover:bg-amber-500/40 text-amber-300 rounded-xl font-bold flex items-center gap-1 transition">
+                        <i class="fa-solid fa-lightbulb"></i> Pista
+                    </button>
+                    <button id="btn-restart" class="px-3 py-2 bg-slate-800 border border-slate-600 hover:bg-slate-700 text-slate-300 rounded-xl font-bold transition">
+                        <i class="fa-solid fa-rotate-right"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Level Interactive Area -->
+            <div class="w-full glass-panel rounded-2xl p-6 min-h-[480px] flex flex-col justify-center items-center relative overflow-hidden">
+                
+                <!-- Instruction Header -->
+                <p id="game-instruction" class="text-center text-lg text-slate-200 mb-6 max-w-2xl font-semibold">
+                    Instrucción general del minijuego o acertijo...
+                </p>
+
+                <!-- Dynamic Game Content Container (DOM or Canvas) -->
+                <div id="game-playground" class="w-full flex-1 flex flex-col items-center justify-center min-h-[340px]">
+                    <!-- Dynamic level content generated here -->
+                </div>
+
+                <!-- Feedback Toast inside Level -->
+                <div id="game-toast" class="hidden absolute bottom-4 px-6 py-3 rounded-xl font-bold text-center border shadow-xl transition-all">
+                    Mensaje de retroalimentación
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- PLAYER REGISTRATION / PROFILE MODAL -->
+    <div id="modal-profile" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex justify-center items-center z-[60] hidden p-4">
+        <div class="glass-panel p-7 rounded-3xl max-w-md w-full border border-sky-400/40 shadow-2xl">
+            <div class="text-center mb-6">
+                <div class="text-5xl text-sky-400 mb-3"><i class="fa-solid fa-user-astronaut"></i></div>
+                <h3 class="font-hud text-2xl font-bold text-sky-300">Registro de Cadete</h3>
+                <p class="text-sm text-slate-400 mt-2">Crea tu perfil para guardar tu avance, puntaje y récords.</p>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="text-xs uppercase text-slate-400 font-bold block mb-1">Nombre / callsign</label>
+                    <input id="player-name-input" maxlength="24" type="text" placeholder="Ej. Cadete Águila"
+                           class="w-full bg-slate-950 border border-slate-700 focus:border-sky-400 rounded-xl px-4 py-3 outline-none text-slate-100">
+                </div>
+                <div>
+                    <label class="text-xs uppercase text-slate-400 font-bold block mb-1">Aeronave favorita</label>
+                    <select id="player-aircraft-input" class="w-full bg-slate-950 border border-slate-700 focus:border-sky-400 rounded-xl px-4 py-3 outline-none text-slate-100">
+                        <option value="Caza">Caza</option>
+                        <option value="Transporte">Transporte</option>
+                        <option value="Helicóptero">Helicóptero</option>
+                        <option value="Entrenamiento">Entrenamiento</option>
+                    </select>
+                </div>
+                <button id="btn-save-profile" class="w-full py-3 bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-xl font-bold font-hud transition">
+                    <i class="fa-solid fa-floppy-disk mr-2"></i> Guardar perfil
+                </button>
+                <button id="btn-reset-progress" class="w-full py-2 text-xs text-red-300 hover:text-red-200">
+                    Reiniciar progreso y crear nuevo cadete
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LEVEL SUCCESS / FAIL MODAL -->
+    <div id="modal-result" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex justify-center items-center z-50 hidden">
+        <div class="glass-panel p-8 rounded-3xl max-w-md w-full text-center border border-sky-400/40 shadow-2xl relative animate-bounce-short">
+            <div id="modal-icon" class="text-6xl mb-4 text-amber-400">
+                <i class="fa-solid fa-trophy"></i>
+            </div>
+            <h3 id="modal-title" class="font-hud text-2xl font-bold text-sky-300 mb-2">¡Nivel Completado!</h3>
+            <div id="modal-stars" class="text-3xl text-amber-400 space-x-2 mb-4">
+                <i class="fa-solid fa-star"></i>
+                <i class="fa-solid fa-star"></i>
+                <i class="fa-solid fa-star"></i>
+            </div>
+            <p id="modal-desc" class="text-slate-300 text-sm mb-6">
+                Has demostrado un excelente conocimiento del comportamiento de los fluidos y la atmósfera ISA.
+            </p>
+            <div id="modal-theory-summary" class="bg-slate-900/90 p-4 rounded-xl border border-sky-500/20 text-xs text-left text-slate-300 mb-6 max-h-40 overflow-y-auto">
+                <strong class="text-sky-400 block mb-1 font-hud">Repaso Aeronáutico:</strong>
+                <span id="modal-summary-text">Concepto clave...</span>
+            </div>
+            <div class="bg-slate-950/80 rounded-xl border border-slate-700 p-3 mb-5 grid grid-cols-3 gap-2 text-center text-xs">
+                <div><span class="block text-slate-500">Puntos</span><strong id="modal-score" class="font-hud text-emerald-400">+0</strong></div>
+                <div><span class="block text-slate-500">Récord</span><strong id="modal-record" class="font-hud text-amber-400">0</strong></div>
+                <div><span class="block text-slate-500">Progreso</span><strong id="modal-progress" class="font-hud text-sky-400">0%</strong></div>
+            </div>
+            <div class="flex justify-center gap-4">
+                <button id="btn-modal-retry" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl font-bold text-slate-200 transition">
+                    Reintentar
+                </button>
+                <button id="btn-modal-next" class="px-6 py-2.5 bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-xl font-bold font-hud transition shadow-lg shadow-sky-500/30">
+                    Siguiente Nivel <i class="fa-solid fa-arrow-right ml-1"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- FOOTER -->
+    <footer class="py-3 text-center text-xs text-slate-500 border-t border-slate-800 glass-panel mt-4">
+        Basado estrictamente en el Manual de Aviación (Sección 1.1 La Atmósfera & 1.1.4 Atmósfera Tipo ISA). Fuerza Aérea del Perú.
+    </footer>
+
+    <!-- GAME LOGIC ENGINE -->
+    <script>
+        // --- SOUND SYNTHESIZER (Web Audio API) ---
+        class SoundEffects {
+            constructor() {
+                this.ctx = null;
+                this.muted = false;
+            }
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+            playBeep(freq = 440, type = 'sine', duration = 0.15) {
+                if (this.muted) return;
+                this.init();
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                    gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + duration);
+                } catch(e){}
+            }
+            playWin() {
+                if (this.muted) return;
+                [523.25, 659.25, 783.99, 1046.50].forEach((f, i) => {
+                    setTimeout(() => this.playBeep(f, 'triangle', 0.2), i * 120);
+                });
+            }
+            playFail() {
+                if (this.muted) return;
+                [300, 250, 200].forEach((f, i) => {
+                    setTimeout(() => this.playBeep(f, 'sawtooth', 0.25), i * 150);
+                });
+            }
+        }
+        const sfx = new SoundEffects();
+
+        // --- LEVEL DEFINITIONS (1 to 30 based on 1.1 to 1.1.4) ---
+        // 20 Interactive / Action mini-games, 10 Theory / Brain Test interactive levels
+        const LEVELS = [
+            // LEVEL 1
+            {
+                id: 1,
+                title: "El Mezclador de Aire",
+                type: "theory", // 1/10
+                category: "1.1 La Atmósfera",
+                instruction: "Arrastra los porcentajes correctos de gases para llenar la mezcla de aire de la masa atmosférica.",
+                hint: "El nitrógeno es el más abundante (78%), seguido del oxígeno (21%) y otros gases (1%).",
+                summary: "La atmósfera es una mezcla de gases compuesta principalmente por 78% de Nitrógeno, 21% de Oxígeno y 1% de otros gases.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="w-full max-w-lg flex flex-col items-center gap-6">
+                            <div class="flex gap-4">
+                                <div class="bg-sky-900/50 p-4 rounded-xl border border-sky-400/30 text-center drag-item cursor-pointer" draggable="true" data-val="78">Nitrógeno (78%)</div>
+                                <div class="bg-red-900/50 p-4 rounded-xl border border-red-400/30 text-center drag-item cursor-pointer" draggable="true" data-val="21">Oxígeno (21%)</div>
+                                <div class="bg-amber-900/50 p-4 rounded-xl border border-amber-400/30 text-center drag-item cursor-pointer" draggable="true" data-val="1">Otros Gases (1%)</div>
+                            </div>
+                            <div class="grid grid-cols-3 gap-4 w-full">
+                                <div class="drop-zone border-2 border-dashed border-sky-400/50 p-6 rounded-2xl text-center bg-slate-900/60" data-target="78">
+                                    <span class="text-xs text-slate-400 block mb-2">Mayor Constituyente</span>
+                                    <div class="zone-slot font-bold text-sky-300">Arrastra aquí</div>
+                                </div>
+                                <div class="drop-zone border-2 border-dashed border-red-400/50 p-6 rounded-2xl text-center bg-slate-900/60" data-target="21">
+                                    <span class="text-xs text-slate-400 block mb-2">Gas Vital Vuelo</span>
+                                    <div class="zone-slot font-bold text-red-300">Arrastra aquí</div>
+                                </div>
+                                <div class="drop-zone border-2 border-dashed border-amber-400/50 p-6 rounded-2xl text-center bg-slate-900/60" data-target="1">
+                                    <span class="text-xs text-slate-400 block mb-2">Gases Traza</span>
+                                    <div class="zone-slot font-bold text-amber-300">Arrastra aquí</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    let matched = 0;
+                    const items = container.querySelectorAll('.drag-item');
+                    const zones = container.querySelectorAll('.drop-zone');
+
+                    items.forEach(item => {
+                        item.addEventListener('dragstart', (e) => {
+                            e.dataTransfer.setData('text/plain', item.dataset.val);
+                        });
+                    });
+
+                    zones.forEach(zone => {
+                        zone.addEventListener('dragover', (e) => e.preventDefault());
+                        zone.addEventListener('drop', (e) => {
+                            e.preventDefault();
+                            const val = e.dataTransfer.getData('text/plain');
+                            if (val === zone.dataset.target && !zone.classList.contains('done')) {
+                                zone.classList.add('done', 'bg-emerald-950/60', 'border-emerald-500');
+                                zone.querySelector('.zone-slot').innerText = `✓ Completado (${val}%)`;
+                                sfx.playBeep(600, 'sine', 0.1);
+                                matched++;
+                                if (matched === 3) setTimeout(onWin, 500);
+                            } else {
+                                sfx.playFail();
+                            }
+                        });
+                    });
+                }
+            },
+            // LEVEL 2
+            {
+                id: 2,
+                title: "Colector de Vapor de Agua",
+                type: "interactive", // 1/20
+                category: "1.1 La Atmósfera",
+                instruction: "Usa las flechas o mantén presionado para mover el recipiente y recolectar vapor de agua sin exceder el límite del 5%.",
+                hint: "El vapor de agua en las capas bajas varía entre 0% y 5% según el clima.",
+                summary: "El vapor de agua está concentrado en las capas más bajas y su volumen varía entre 0% y 5%. Al aumentar el vapor, los demás gases disminuyen proporcionalmente.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `<canvas id="c2" width="500" height="320"></canvas>`;
+                    const canvas = document.getElementById('c2');
+                    const ctx = canvas.getContext('2d');
+                    let basketX = 210;
+                    let level = 0;
+                    let drops = [];
+                    let anim;
+
+                    function spawnDrop() {
+                        drops.push({ x: Math.random() * 460 + 20, y: 0, speed: 2 + Math.random() * 2 });
+                    }
+
+                    function update() {
+                        ctx.clearRect(0,0,500,320);
+                        // Draw basket
+                        ctx.fillStyle = '#38bdf8';
+                        ctx.fillRect(basketX, 280, 80, 20);
+                        ctx.fillStyle = '#fff';
+                        ctx.font = '12px Orbitron';
+                        ctx.fillText(`H2O: ${level.toFixed(1)}% / 5%`, basketX + 5, 295);
+
+                        // Spawn drops
+                        if (Math.random() < 0.05) spawnDrop();
+
+                        for (let i = drops.length - 1; i >= 0; i--) {
+                            let d = drops[i];
+                            d.y += d.speed;
+                            ctx.fillStyle = '#60a5fa';
+                            ctx.beginPath();
+                            ctx.arc(d.x, d.y, 8, 0, Math.PI * 2);
+                            ctx.fill();
+
+                            // Collision
+                            if (d.y >= 280 && d.y <= 300 && d.x >= basketX && d.x <= basketX + 80) {
+                                level += 0.5;
+                                drops.splice(i, 1);
+                                sfx.playBeep(500);
+                                if (level >= 5) {
+                                    cancelAnimationFrame(anim);
+                                    setTimeout(onWin, 300);
+                                    return;
+                                }
+                            } else if (d.y > 320) {
+                                drops.splice(i, 1);
+                            }
+                        }
+                        anim = requestAnimationFrame(update);
+                    }
+
+                    const handleKey = (e) => {
+                        if (e.key === 'ArrowLeft') basketX = Math.max(0, basketX - 25);
+                        if (e.key === 'ArrowRight') basketX = Math.min(420, basketX + 25);
+                    };
+                    window.addEventListener('keydown', handleKey);
+
+                    // Touch/Click control
+                    canvas.addEventListener('mousemove', (e) => {
+                        const rect = canvas.getBoundingClientRect();
+                        basketX = Math.min(420, Math.max(0, e.clientX - rect.left - 40));
+                    });
+
+                    update();
+                }
+            },
+            // LEVEL 3
+            {
+                id: 3,
+                title: "Equilibrio del Fluido Aéreo",
+                type: "interactive", // 2/20
+                category: "1.1 La Atmósfera",
+                instruction: "Mantén la aeronave en la zona segura regulando la combinación de Presión, Temperatura y Densidad.",
+                hint: "Presión, Temperatura y Densidad están íntimamente relacionadas en el comportamiento del aire como fluido.",
+                summary: "El comportamiento del aire como fluido depende de la interacción continua entre Presión, Temperatura y Densidad.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="w-full max-w-md flex flex-col items-center gap-4">
+                            <div class="w-full bg-slate-900 p-4 rounded-xl border border-sky-500/30">
+                                <label class="text-xs text-sky-400 font-bold block mb-1">Presión Dial</label>
+                                <input type="range" id="slider-p" min="10" max="100" value="20" class="w-full">
+                                <label class="text-xs text-amber-400 font-bold block mt-3 mb-1">Temperatura Dial</label>
+                                <input type="range" id="slider-t" min="10" max="100" value="80" class="w-full">
+                            </div>
+                            <div class="w-full bg-slate-950 p-6 rounded-2xl border border-slate-700 text-center">
+                                <span class="text-xs text-slate-400 block mb-1">Índice de Sustentación Fluida</span>
+                                <div id="fluid-indicator" class="font-hud text-3xl font-bold text-red-400">INSEGURO</div>
+                            </div>
+                        </div>
+                    `;
+                    const sp = container.querySelector('#slider-p');
+                    const st = container.querySelector('#slider-t');
+                    const ind = container.querySelector('#fluid-indicator');
+
+                    function check() {
+                        const valP = parseInt(sp.value);
+                        const valT = parseInt(st.value);
+                        // Safe zone when P is high and T is moderate/balanced
+                        if (valP >= 60 && valP <= 80 && valT >= 30 && valT <= 50) {
+                            ind.innerText = "ESTABLE Y OPTIMO";
+                            ind.className = "font-hud text-3xl font-bold text-emerald-400 animate-pulse";
+                            sfx.playBeep(700);
+                            setTimeout(onWin, 600);
+                        } else {
+                            ind.innerText = "DESEQUILIBRIO FLUIDO";
+                            ind.className = "font-hud text-3xl font-bold text-red-400";
+                        }
+                    }
+                    sp.addEventListener('input', check);
+                    st.addEventListener('input', check);
+                }
+            },
+            // LEVEL 4
+            {
+                id: 4,
+                title: "La Columna Invisible",
+                type: "theory", // 2/10 - Brain Test Style
+                category: "1.1.1 Presión Atmosférica",
+                instruction: "¿Dónde es mayor la presión atmosférica? Toca la montaña o lugar con la columna de aire MÁS PESADA.",
+                hint: "A mayor altura, menor es la columna de aire encima. Busca la base más baja.",
+                summary: "La presión atmosférica es la fuerza ejercida por el peso del aire en una columna imaginaria. A nivel del mar la columna es mayor que en la cima del Huascarán o Everest.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="grid grid-cols-3 gap-4 w-full max-w-lg">
+                            <div class="brain-test-card bg-slate-900 border border-slate-700 hover:border-sky-400 p-4 rounded-2xl text-center cursor-pointer" data-ans="wrong">
+                                <i class="fa-solid fa-mountain text-4xl text-amber-500 mb-2"></i>
+                                <h4 class="font-bold text-sky-200">Cima del Everest</h4>
+                                <p class="text-xs text-slate-400 mt-1">Columna de aire muy corta</p>
+                            </div>
+                            <div class="brain-test-card bg-slate-900 border border-slate-700 hover:border-sky-400 p-4 rounded-2xl text-center cursor-pointer" data-ans="wrong">
+                                <i class="fa-solid fa-mountain-sun text-4xl text-amber-400 mb-2"></i>
+                                <h4 class="font-bold text-sky-200">Cima Huascarán</h4>
+                                <p class="text-xs text-slate-400 mt-1">Columna de aire media</p>
+                            </div>
+                            <div class="brain-test-card bg-slate-900 border border-slate-700 hover:border-sky-400 p-4 rounded-2xl text-center cursor-pointer" data-ans="correct">
+                                <i class="fa-solid fa-water text-4xl text-blue-400 mb-2"></i>
+                                <h4 class="font-bold text-sky-200">Nivel del Mar</h4>
+                                <p class="text-xs text-slate-400 mt-1">Columna de aire máxima sobre nosotros</p>
+                            </div>
+                        </div>
+                    `;
+                    container.querySelectorAll('.brain-test-card').forEach(card => {
+                        card.addEventListener('click', () => {
+                            if (card.dataset.ans === 'correct') {
+                                card.classList.add('bg-emerald-900/60', 'border-emerald-400');
+                                sfx.playBeep(800);
+                                setTimeout(onWin, 500);
+                            } else {
+                                card.classList.add('bg-red-900/60', 'border-red-400');
+                                sfx.playFail();
+                            }
+                        });
+                    });
+                }
+            },
+            // LEVEL 5
+            {
+                id: 5,
+                title: "Calculadora de Gradiente de Presión",
+                type: "interactive", // 3/20
+                category: "1.1.1 Presión Atmosférica",
+                instruction: "Un avión asciende 3,000 pies. Ajusta el altímetro reduciendo la presión exacta según la regla astronómica (1 pulgada por cada 1000 ft).",
+                hint: "La presión disminuye 1 pulgada de mercurio (1\" Hg) por cada 1,000 pies de altura.",
+                summary: "La magnitud del cambio de presión atmosférica con la altitud es de aproximadamente 1 pulgada por cada 1,000 pies (o 1 mb por cada 9 metros).",
+                setup: (container, onWin) => {
+                    let initialP = 29.92;
+                    let currentVal = 29.92;
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-6">
+                            <div class="bg-slate-950 p-6 rounded-2xl border border-sky-500/40 text-center">
+                                <span class="text-xs text-slate-400 block mb-1">Presión al Nivel del Mar</span>
+                                <div class="font-hud text-xl text-slate-300">29.92 "Hg</div>
+                                <div class="my-4 text-amber-400 font-bold"><i class="fa-solid fa-plane-ascent text-2xl"></i> +3,000 ft Ascenso</div>
+                                <span class="text-xs text-slate-400 block mb-1">Presión Objetiva en Cabina</span>
+                                <div id="p-target-val" class="font-hud text-3xl text-sky-400 font-bold">${currentVal.toFixed(2)} "Hg</div>
+                            </div>
+                            <div class="flex gap-4">
+                                <button id="btn-p-down" class="px-6 py-3 bg-sky-600 hover:bg-sky-500 rounded-xl font-hud font-bold text-lg">- 1.00 "Hg</button>
+                                <button id="btn-p-up" class="px-6 py-3 bg-slate-800 hover:bg-slate-700 rounded-xl font-hud font-bold text-lg">+ 1.00 "Hg</button>
+                            </div>
+                        </div>
+                    `;
+                    const display = container.querySelector('#p-target-val');
+                    container.querySelector('#btn-p-down').addEventListener('click', () => {
+                        currentVal -= 1.0;
+                        display.innerText = `${currentVal.toFixed(2)} "Hg`;
+                        checkP();
+                    });
+                    container.querySelector('#btn-p-up').addEventListener('click', () => {
+                        currentVal += 1.0;
+                        display.innerText = `${currentVal.toFixed(2)} "Hg`;
+                        checkP();
+                    });
+
+                    function checkP() {
+                        if (Math.abs(currentVal - 26.92) < 0.05) {
+                            sfx.playBeep(900);
+                            setTimeout(onWin, 500);
+                        }
+                    }
+                }
+            },
+            // LEVEL 6
+            {
+                id: 6,
+                title: "Emergencia: Presurización de Cabina",
+                type: "interactive", // 4/20
+                category: "1.1.1 Presión Atmosférica",
+                instruction: "El avión ha superado la altitud de presión crítica. Pulsa rápidamente los sellos de presurización antes de que caiga la presión interna.",
+                hint: "Debido a la baja presión a altas altitudes, los aviones requieren sistemas de presurización de cabina.",
+                summary: "A altitudes elevadas, la menor presión atmosférica y menor densidad hacen indispensable presurizar la cabina para la seguridad de pasajeros y tripulación.",
+                setup: (container, onWin) => {
+                    let sealsLeft = 5;
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-4">
+                            <p class="text-amber-400 font-bold">Quedan <span id="seal-count">5</span> fugas por sellar!</p>
+                            <div id="cabin-box" class="relative w-80 h-64 bg-slate-900 border-2 border-red-500/50 rounded-2xl overflow-hidden">
+                                <!-- Leaks generated -->
+                            </div>
+                        </div>
+                    `;
+                    const box = container.querySelector('#cabin-box');
+                    const count = container.querySelector('#seal-count');
+
+                    for (let i = 0; i < 5; i++) {
+                        const leak = document.createElement('button');
+                        leak.className = 'absolute w-10 h-10 bg-red-500 hover:bg-emerald-400 rounded-full animate-ping text-white flex items-center justify-center';
+                        leak.style.top = `${Math.random() * 180 + 10}px`;
+                        leak.style.left = `${Math.random() * 240 + 10}px`;
+                        leak.innerHTML = '<i class="fa-solid fa-wrench text-xs"></i>';
+                        leak.addEventListener('click', () => {
+                            leak.remove();
+                            sealsLeft--;
+                            count.innerText = sealsLeft;
+                            sfx.playBeep(700);
+                            if (sealsLeft === 0) setTimeout(onWin, 300);
+                        });
+                        box.appendChild(leak);
+                    }
+                }
+            },
+            // LEVEL 7
+            {
+                id: 7,
+                title: "Lectura del Barómetro de Mercurio",
+                type: "theory", // 3/10
+                category: "1.1.1 Presión Atmosférica",
+                instruction: "Selecciona las equivalencias de unidades de medición de presión empleadas en aviación.",
+                hint: "1 pulgada del barómetro de mercurio equivale a aproximadamente 34 milibares. 1 mb = 10^3 dinas/cm².",
+                summary: "En aviación la presión se mide en milibares (1 mb = 10^3 dinas/cm²) o pulgadas de mercurio (1 pulgada ≈ 34 milibares).",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-6 w-full max-w-md">
+                            <div class="bg-slate-900 p-4 rounded-xl border border-sky-400/30 w-full text-center">
+                                <span class="text-slate-400 text-xs font-bold block mb-1">1 Pulgada de Mercurio ("Hg) equivale aproximadamente a:</span>
+                                <div class="flex justify-center gap-3 mt-3">
+                                    <button class="opt-btn px-4 py-2 bg-slate-800 hover:bg-sky-600 rounded-lg font-bold" data-correct="false">10 mb</button>
+                                    <button class="opt-btn px-4 py-2 bg-slate-800 hover:bg-sky-600 rounded-lg font-bold" data-correct="true">34 mb</button>
+                                    <button class="opt-btn px-4 py-2 bg-slate-800 hover:bg-sky-600 rounded-lg font-bold" data-correct="false">100 mb</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    container.querySelectorAll('.opt-btn').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            if (btn.dataset.correct === 'true') {
+                                btn.classList.add('bg-emerald-600');
+                                sfx.playBeep(800);
+                                setTimeout(onWin, 500);
+                            } else {
+                                btn.classList.add('bg-red-600');
+                                sfx.playFail();
+                            }
+                        });
+                    });
+                }
+            },
+            // LEVEL 8
+            {
+                id: 8,
+                title: "El Sol y el Calentamiento Terrestre",
+                type: "interactive", // 5/20
+                category: "1.1.2 Temperatura del Aire",
+                instruction: "Simula la radiación solar: apunta los rayos hacia la TIERRA primero para que esta transfiera el calor al aire.",
+                hint: "El sol atraviesa la atmósfera sin calentarla directamente; la Tierra absorbe la energía y calienta las capas en contacto.",
+                summary: "La energía solar es absorbida por la Tierra, calentándola; luego la superficie cede gradualmente calor a las capas de aire adyacentes.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-4">
+                            <div class="text-center text-xs text-amber-300 font-bold mb-2">Haz clic 3 veces en la superficie terrestre para generar transferencia de calor.</div>
+                            <div id="sun-target" class="w-64 h-48 bg-slate-900 relative rounded-2xl border border-sky-500/30 overflow-hidden flex flex-col justify-between p-4 cursor-pointer">
+                                <div class="text-amber-400 font-bold text-xs flex items-center gap-2"><i class="fa-solid fa-sun text-2xl"></i> Rayos Solares</div>
+                                <div id="air-layer" class="bg-sky-950/40 p-2 rounded text-center text-xs text-slate-400">Aire Superior (Frío)</div>
+                                <div id="ground-layer" class="bg-amber-900/60 p-3 rounded text-center text-xs text-amber-200 font-bold">Superficie Terrestre (Haz Clic Aquí)</div>
+                            </div>
+                        </div>
+                    `;
+                    let clicks = 0;
+                    const ground = container.querySelector('#ground-layer');
+                    const air = container.querySelector('#air-layer');
+
+                    ground.addEventListener('click', () => {
+                        clicks++;
+                        sfx.playBeep(400 + clicks * 100);
+                        if (clicks === 1) ground.innerText = "Tierra Calentándose... 🔥";
+                        if (clicks === 2) ground.innerText = "Cediendo calor al aire... ♨️";
+                        if (clicks === 3) {
+                            ground.innerText = "Tierra Caliente!";
+                            air.innerText = "Aire calentado por contacto gradual!";
+                            air.classList.add('bg-amber-500/30', 'text-amber-300');
+                            setTimeout(onWin, 500);
+                        }
+                    });
+                }
+            },
+            // LEVEL 9
+            {
+                id: 9,
+                title: "Gradiente Térmico de Vuelo",
+                type: "interactive", // 6/20
+                category: "1.1.2 Temperatura del Aire",
+                instruction: "El avión sube de 0 a 2,000 metros. Calcula la caída de temperatura (-6.5 °C cada 1000m).",
+                hint: "El gradiente térmico es de aproximadamente 6.5 °C por cada 1,000 metros (1.98 °C / 1000 ft).",
+                summary: "A mayor altura menor temperatura. La tasa estándar es de 6.5 °C menos por cada 1,000 metros hasta los 11,000 m.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-4">
+                            <div class="bg-slate-950 p-6 rounded-2xl border border-sky-400/30 text-center">
+                                <p class="text-xs text-slate-400 mb-2">Temp en Superficie: <strong class="text-amber-400">15 °C</strong></p>
+                                <p class="text-xs text-slate-400 mb-4">Altitud Alcanzada: <strong class="text-sky-400">2,000 metros</strong></p>
+                                <label class="text-xs text-slate-300 block mb-1">Ajusta la temperatura resultante:</label>
+                                <div id="temp-val" class="font-hud text-3xl text-sky-300 font-bold my-2">15.0 °C</div>
+                                <input type="range" id="temp-slider" min="-10" max="20" step="0.5" value="15" class="w-full">
+                            </div>
+                        </div>
+                    `;
+                    const slider = container.querySelector('#temp-slider');
+                    const valDisplay = container.querySelector('#temp-val');
+
+                    slider.addEventListener('input', () => {
+                        const val = parseFloat(slider.value);
+                        valDisplay.innerText = `${val.toFixed(1)} °C`;
+                        // 15 - (6.5 * 2) = 2 °C
+                        if (Math.abs(val - 2.0) < 0.2) {
+                            sfx.playBeep(850);
+                            setTimeout(onWin, 500);
+                        }
+                    });
+                }
+            },
+            // LEVEL 10
+            {
+                id: 10,
+                title: "El Límite de la Tropopausa",
+                type: "theory", // 4/10
+                category: "1.1.2 Temperatura del Aire",
+                instruction: "¿A qué altitud se considera que la temperatura deja de caer y se mantiene constante en -56.5 °C?",
+                hint: "Ocurre a los 11,000 metros (36,090 pies).",
+                summary: "Desde el nivel del mar hasta los 11,000 mts (36,090 ft) la temperatura baja. A altitudes superiores permanece constante en -56.5 °C.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="grid grid-cols-3 gap-4 w-full max-w-lg">
+                            <button class="opt-btn bg-slate-900 border border-slate-700 p-4 rounded-xl font-bold hover:border-sky-400" data-ok="false">5,000 mts</button>
+                            <button class="opt-btn bg-slate-900 border border-slate-700 p-4 rounded-xl font-bold hover:border-sky-400" data-ok="true">11,000 mts (36,090 ft)</button>
+                            <button class="opt-btn bg-slate-900 border border-slate-700 p-4 rounded-xl font-bold hover:border-sky-400" data-ok="false">25,000 mts</button>
+                        </div>
+                    `;
+                    container.querySelectorAll('.opt-btn').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            if (btn.dataset.ok === 'true') {
+                                btn.classList.add('bg-emerald-600');
+                                sfx.playBeep(800);
+                                setTimeout(onWin, 500);
+                            } else {
+                                btn.classList.add('bg-red-600');
+                                sfx.playFail();
+                            }
+                        });
+                    });
+                }
+            },
+            // LEVEL 11
+            {
+                id: 11,
+                title: "Ley de Gay-Lussac: Presión vs Temp",
+                type: "interactive", // 7/20
+                category: "1.1.2 Temperatura del Aire",
+                instruction: "Comprime la cámara neumática para aumentar la presión y observa la reacción inmediata de la temperatura.",
+                hint: "Comprimir un gas aumenta su temperatura; descomprimirlo lo enfría (Ley de Gay-Lussac).",
+                summary: "Existe una relación directa entre temperatura y presión: comprimir un gas aumenta su temperatura y descomprimirlo la reduce.",
+                setup: (container, onWin) => {
+                    let press = 0;
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-4">
+                            <div class="bg-slate-900 p-6 rounded-2xl border border-sky-400/30 text-center w-80">
+                                <span class="text-xs text-slate-400 block mb-1">Presión Neumática</span>
+                                <div id="p-meter" class="font-hud text-xl text-sky-400 font-bold mb-3">1.0 ATM</div>
+                                <span class="text-xs text-slate-400 block mb-1">Temperatura Interna del Gas</span>
+                                <div id="t-meter" class="font-hud text-2xl text-amber-400 font-bold">15 °C</div>
+                            </div>
+                            <button id="btn-compress" class="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold font-hud rounded-xl transition shadow-lg">
+                                <i class="fa-solid fa-compress"></i> ¡COMPRIMIR PISTÓN!
+                            </button>
+                        </div>
+                    `;
+                    const pM = container.querySelector('#p-meter');
+                    const tM = container.querySelector('#t-meter');
+                    container.querySelector('#btn-compress').addEventListener('click', () => {
+                        press += 1;
+                        pM.innerText = `${(1.0 + press * 0.5).toFixed(1)} ATM`;
+                        tM.innerText = `${15 + press * 10} °C`;
+                        sfx.playBeep(300 + press * 80);
+                        if (press >= 5) {
+                            setTimeout(onWin, 500);
+                        }
+                    });
+                }
+            },
+            // LEVEL 12
+            {
+                id: 12,
+                title: "Ecuación de Densidad Alar",
+                type: "theory", // 5/10
+                category: "1.1.3 Densidad del Aire",
+                instruction: "Selecciona la fórmula física exacta que define la densidad de un cuerpo o fluido.",
+                hint: "La densidad expresa la cantidad de masa por unidad de volumen (d = m / v).",
+                summary: "Densidad es d = m / v (masa dividida por volumen). Esta propiedad en el aire es clave para explicar cómo vuelan las alas.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="flex flex-col gap-3 w-full max-w-sm">
+                            <button class="f-btn p-4 bg-slate-900 border border-slate-700 rounded-xl font-hud font-bold hover:border-sky-400" data-c="false">d = p * v</button>
+                            <button class="f-btn p-4 bg-slate-900 border border-slate-700 rounded-xl font-hud font-bold hover:border-sky-400 text-sky-300" data-c="true">d = m / v</button>
+                            <button class="f-btn p-4 bg-slate-900 border border-slate-700 rounded-xl font-hud font-bold hover:border-sky-400" data-c="false">d = v / m</button>
+                        </div>
+                    `;
+                    container.querySelectorAll('.f-btn').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            if (btn.dataset.c === 'true') {
+                                btn.classList.add('bg-emerald-600');
+                                sfx.playBeep(800);
+                                setTimeout(onWin, 500);
+                            } else {
+                                btn.classList.add('bg-red-600');
+                                sfx.playFail();
+                            }
+                        });
+                    });
+                }
+            },
+            // LEVEL 13
+            {
+                id: 13,
+                title: "Ley de Boyle e Impacto de Presión",
+                type: "interactive", // 8/20
+                category: "1.1.3 Densidad del Aire",
+                instruction: "Aumenta la presión manteniendo la temperatura constante para reducir el volumen de masa gaseosa (Ley de Boyle).",
+                hint: "Ley de Boyle: A temperatura constante, los volúmenes ocupados por un gas son inversamente proporcionales a las presiones.",
+                summary: "Al comprimir un gas (mayor presión), la misma masa ocupa menos volumen, por lo que la densidad aumenta directamente con la presión.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-4">
+                            <div class="bg-slate-900 p-6 rounded-2xl border border-sky-400/30 text-center w-80">
+                                <span class="text-xs text-slate-400 block mb-1">Masa de Aire Regulada</span>
+                                <div id="boyle-box" class="w-full bg-sky-500/30 h-24 my-3 rounded-xl border border-sky-400 flex items-center justify-center font-hud text-lg font-bold text-sky-200">
+                                    Volumen Grande (Baja Densidad)
+                                </div>
+                                <button id="btn-boyle" class="px-6 py-2.5 bg-sky-500 text-slate-950 font-bold font-hud rounded-xl">Aplicar Presión</button>
+                            </div>
+                        </div>
+                    `;
+                    let pressed = false;
+                    const box = container.querySelector('#boyle-box');
+                    container.querySelector('#btn-boyle').addEventListener('click', () => {
+                        if (!pressed) {
+                            pressed = true;
+                            box.style.height = '40px';
+                            box.innerText = "Volumen Pequeño (¡Alta Densidad!)";
+                            box.classList.replace('bg-sky-500/30', 'bg-emerald-500/50');
+                            sfx.playBeep(850);
+                            setTimeout(onWin, 600);
+                        }
+                    });
+                }
+            },
+            // LEVEL 14
+            {
+                id: 14,
+                title: "Dilatación de Gay-Lussac",
+                type: "interactive", // 9/20
+                category: "1.1.3 Densidad del Aire",
+                instruction: "Aplica calor a la masa de aire de sustentación. Observa cómo se dilata el volumen y la densidad disminuye.",
+                hint: "Ley de dilatación: La densidad del aire cambia en proporción inversa a la temperatura.",
+                summary: "Al aplicar calor, un cuerpo se dilata y ocupa más volumen. Como es la misma masa en más volumen, a mayor temperatura menor densidad.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-4">
+                            <div class="bg-slate-900 p-6 rounded-2xl border border-sky-400/30 text-center w-80">
+                                <span class="text-xs text-slate-400 block mb-1">Temperatura de Muestra</span>
+                                <div id="temp-label" class="font-hud text-xl text-amber-400 font-bold mb-2">15 °C</div>
+                                <div id="expand-box" class="w-20 h-20 mx-auto bg-amber-500/40 rounded-xl border border-amber-400 flex items-center justify-center font-hud text-xs font-bold text-amber-200 transition-all duration-300">
+                                    Aire
+                                </div>
+                            </div>
+                            <button id="btn-heat" class="px-6 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold font-hud rounded-xl">
+                                <i class="fa-solid fa-fire"></i> Calentar Aire
+                            </button>
+                        </div>
+                    `;
+                    let heated = false;
+                    const bBox = container.querySelector('#expand-box');
+                    const tLbl = container.querySelector('#temp-label');
+                    container.querySelector('#btn-heat').addEventListener('click', () => {
+                        if (!heated) {
+                            heated = true;
+                            bBox.style.width = '140px';
+                            bBox.style.height = '120px';
+                            tLbl.innerText = "45 °C (Dilatado)";
+                            bBox.innerText = "Baja Densidad";
+                            sfx.playBeep(750);
+                            setTimeout(onWin, 600);
+                        }
+                    });
+                }
+            },
+            // LEVEL 15
+            {
+                id: 15,
+                title: "El Dilema de la Altitud",
+                type: "theory", // 6/10 - Brain Test Style
+                category: "1.1.3 Densidad del Aire",
+                instruction: "Al ganar altitud cae la presión (baja la densidad) y cae la temperatura (sube la densidad). ¿Cuál influye MÁS?",
+                hint: "El cambio de presión tiene una influencia predominante sobre el cambio de temperatura.",
+                summary: "Influye en mayor medida el cambio de presión que el de temperatura, resultando que a mayor altura menor densidad.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="grid grid-cols-2 gap-4 w-full max-w-md">
+                            <button class="opt-btn bg-slate-900 border border-slate-700 p-6 rounded-2xl font-bold hover:border-sky-400 text-center" data-ok="true">
+                                <i class="fa-solid fa-weight-hanging text-3xl text-sky-400 block mb-2"></i>
+                                Cambio de Presión (Gana) -> A mayor altura MENOR densidad
+                            </button>
+                            <button class="opt-btn bg-slate-900 border border-slate-700 p-6 rounded-2xl font-bold hover:border-sky-400 text-center" data-ok="false">
+                                <i class="fa-solid fa-temperature-arrow-down text-3xl text-amber-400 block mb-2"></i>
+                                Cambio de Temperatura (Gana)
+                            </button>
+                        </div>
+                    `;
+                    container.querySelectorAll('.opt-btn').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            if (btn.dataset.ok === 'true') {
+                                btn.classList.add('bg-emerald-600');
+                                sfx.playBeep(800);
+                                setTimeout(onWin, 500);
+                            } else {
+                                btn.classList.add('bg-red-600');
+                                sfx.playFail();
+                            }
+                        });
+                    });
+                }
+            },
+            // LEVEL 16
+            {
+                id: 16,
+                title: "Calibración ISA: Temperatura Estándar",
+                type: "interactive", // 10/20
+                category: "1.1.4 Atmósfera Tipo (ISA)",
+                instruction: "Ajusta la temperatura estándar ISA correspondiente al Nivel del Mar.",
+                hint: "En la atmósfera estándar ISA, la temperatura a nivel del mar es de 15 °C (59 °F).",
+                summary: "La Atmósfera Estándar ISA establece a nivel del mar una temperatura de 15 ºC (59 ºF).",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-4">
+                            <div class="bg-slate-950 p-6 rounded-2xl border border-sky-500/30 text-center w-80">
+                                <span class="text-xs text-slate-400 block mb-1">Temperatura ISA Nivel del Mar</span>
+                                <div id="isa-t" class="font-hud text-3xl text-sky-300 font-bold my-2">0 °C</div>
+                                <input type="range" id="isa-t-slider" min="0" max="30" value="0" class="w-full">
+                            </div>
+                        </div>
+                    `;
+                    const s = container.querySelector('#isa-t-slider');
+                    const d = container.querySelector('#isa-t');
+                    s.addEventListener('input', () => {
+                        d.innerText = `${s.value} °C`;
+                        if (parseInt(s.value) === 15) {
+                            sfx.playBeep(900);
+                            setTimeout(onWin, 500);
+                        }
+                    });
+                }
+            },
+            // LEVEL 17
+            {
+                id: 17,
+                title: "Calibración ISA: Presión Estándar",
+                type: "theory", // 7/10
+                category: "1.1.4 Atmósfera Tipo (ISA)",
+                instruction: "Selecciona el valor exacto de la presión estándar ISA en superficie a Nivel del Mar.",
+                hint: "Los valores estándar son 1013.25 mb o 29.92 pulgadas de columna de mercurio (760 mm).",
+                summary: "Presión estándar a nivel del mar: 760 mm / 29.92\" Hg / 1013.25 mb.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="grid grid-cols-3 gap-3 w-full max-w-lg">
+                            <button class="opt-btn p-4 bg-slate-900 border border-slate-700 rounded-xl font-bold hover:border-sky-400" data-ok="false">1000.00 mb</button>
+                            <button class="opt-btn p-4 bg-slate-900 border border-slate-700 rounded-xl font-bold hover:border-sky-400 text-sky-300" data-ok="true">1013.25 mb (29.92" Hg)</button>
+                            <button class="opt-btn p-4 bg-slate-900 border border-slate-700 rounded-xl font-bold hover:border-sky-400" data-ok="false">780.00 mm Hg</button>
+                        </div>
+                    `;
+                    container.querySelectorAll('.opt-btn').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            if (btn.dataset.ok === 'true') {
+                                btn.classList.add('bg-emerald-600');
+                                sfx.playBeep(850);
+                                setTimeout(onWin, 500);
+                            } else {
+                                btn.classList.add('bg-red-600');
+                                sfx.playFail();
+                            }
+                        });
+                    });
+                }
+            },
+            // LEVEL 18
+            {
+                id: 18,
+                title: "Densidad Estándar ISA",
+                type: "interactive", // 11/20
+                category: "1.1.4 Atmósfera Tipo (ISA)",
+                instruction: "Establece el valor de densidad ISA a nivel del mar: 1.225 Kg por m³.",
+                hint: "Densidad en superficie en ISA: 1.225 Kg/m³.",
+                summary: "La densidad hipotética en la atmósfera patrón OACI a nivel del mar es exactamente 1.225 Kg/m³.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-4">
+                            <div class="bg-slate-950 p-6 rounded-2xl border border-sky-400/30 text-center w-80">
+                                <span class="text-xs text-slate-400 block mb-1">Densidad ISA</span>
+                                <div id="d-val" class="font-hud text-3xl text-sky-400 font-bold my-2">1.000 Kg/m³</div>
+                                <div class="flex gap-3 justify-center">
+                                    <button id="d-minus" class="px-4 py-2 bg-slate-800 rounded-lg font-bold">- 0.025</button>
+                                    <button id="d-plus" class="px-4 py-2 bg-slate-800 rounded-lg font-bold">+ 0.025</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    let currD = 1.000;
+                    const lbl = container.querySelector('#d-val');
+                    const updateD = () => {
+                        lbl.innerText = `${currD.toFixed(3)} Kg/m³`;
+                        if (Math.abs(currD - 1.225) < 0.001) {
+                            sfx.playBeep(900);
+                            setTimeout(onWin, 500);
+                        }
+                    };
+                    container.querySelector('#d-minus').addEventListener('click', () => { currD -= 0.025; updateD(); });
+                    container.querySelector('#d-plus').addEventListener('click', () => { currD += 0.025; updateD(); });
+                }
+            },
+            // LEVEL 19
+            {
+                id: 19,
+                title: "Aceleración y Velocidad del Sonido ISA",
+                type: "theory", // 8/10
+                category: "1.1.4 Atmósfera Tipo (ISA)",
+                instruction: "Conecta las constantes de Aceleración de Gravedad y Velocidad del Sonido con sus valores ISA correspondientes.",
+                hint: "Gravedad g = 9.8 m/s²; Velocidad del sonido = 340.29 m/s.",
+                summary: "Constantes ISA: Aceleración de la gravedad g = 9.8 m/s², Velocidad del sonido = 340.29 m/s.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="grid grid-cols-2 gap-4 w-full max-w-md">
+                            <div class="bg-slate-900 p-4 rounded-xl text-center border border-sky-400/30">
+                                <span class="text-xs text-slate-400 block mb-2">Gravedad (g)</span>
+                                <button class="g-btn px-4 py-2 bg-slate-800 rounded font-bold hover:bg-sky-600" data-v="9.8">9.8 m/s²</button>
+                            </div>
+                            <div class="bg-slate-900 p-4 rounded-xl text-center border border-sky-400/30">
+                                <span class="text-xs text-slate-400 block mb-2">Velocidad Sonido</span>
+                                <button class="s-btn px-4 py-2 bg-slate-800 rounded font-bold hover:bg-sky-600" data-v="340.29">340.29 m/s</button>
+                            </div>
+                        </div>
+                    `;
+                    let gDone = false, sDone = false;
+                    container.querySelector('.g-btn').addEventListener('click', (e) => {
+                        e.target.classList.add('bg-emerald-600');
+                        gDone = true;
+                        sfx.playBeep(700);
+                        if (gDone && sDone) setTimeout(onWin, 400);
+                    });
+                    container.querySelector('.s-btn').addEventListener('click', (e) => {
+                        e.target.classList.add('bg-emerald-600');
+                        sfx.playBeep(700);
+                        sDone = true;
+                        if (gDone && sDone) setTimeout(onWin, 400);
+                    });
+                }
+            },
+            // LEVEL 20
+            {
+                id: 20,
+                title: "Vuelo en la Barrera del Sonido",
+                type: "interactive", // 12/20
+                category: "1.1.4 Atmósfera Tipo (ISA)",
+                instruction: "Acelera el caza turborreactor hasta alcanzar la velocidad exacta del sonido en la ISA (340.29 m/s).",
+                hint: "Mantén presionada la palanca de empuje hasta llegar a 340.29 m/s.",
+                summary: "En la atmósfera tipo OACI a nivel del mar la velocidad del sonido se fija en 340.29 m/s.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-4">
+                            <div class="bg-slate-950 p-6 rounded-2xl border border-sky-400/30 text-center w-80">
+                                <span class="text-xs text-slate-400 block mb-1">Velocidad Actual</span>
+                                <div id="v-sound" class="font-hud text-3xl text-sky-400 font-bold mb-3">0.00 m/s</div>
+                                <button id="btn-thrust" class="w-full py-4 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold font-hud rounded-xl shadow-lg">
+                                    <i class="fa-solid fa-gauge-high"></i> EMPUJE TURBINA
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    let spd = 0;
+                    const display = container.querySelector('#v-sound');
+                    container.querySelector('#btn-thrust').addEventListener('click', () => {
+                        spd += 34.029;
+                        if (spd > 340.29) spd = 340.29;
+                        display.innerText = `${spd.toFixed(2)} m/s`;
+                        sfx.playBeep(400 + spd);
+                        if (Math.abs(spd - 340.29) < 0.1) {
+                            setTimeout(onWin, 500);
+                        }
+                    });
+                }
+            },
+            // LEVEL 21
+            {
+                id: 21,
+                title: "Gradiente de Caída de Presión ISA",
+                type: "theory", // 9/10
+                category: "1.1.4 Atmósfera Tipo (ISA)",
+                instruction: "Selecciona las tasas de descenso de presión aceptadas por OACI en aviación habitual.",
+                hint: "1\" cada 1,000 ft, 1 mb cada 9 metros, o 110 mb cada 1,000 mts.",
+                summary: "Gradiente de presión ISA: Descenso de 1\" por cada 1,000 ft, o 1 mb por cada 9 mts, o 110 mb por cada 1,000 mts.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="flex flex-col gap-3 w-full max-w-sm">
+                            <button class="g-opt p-4 bg-slate-900 border border-slate-700 rounded-xl font-bold hover:border-sky-400" data-ok="true">1 mb cada 9 mts / 1" cada 1,000 ft</button>
+                            <button class="g-opt p-4 bg-slate-900 border border-slate-700 rounded-xl font-bold hover:border-sky-400" data-ok="false">5 mb cada 100 mts</button>
+                        </div>
+                    `;
+                    container.querySelectorAll('.g-opt').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            if (btn.dataset.ok === 'true') {
+                                btn.classList.add('bg-emerald-600');
+                                sfx.playBeep(800);
+                                setTimeout(onWin, 500);
+                            } else {
+                                btn.classList.add('bg-red-600');
+                                sfx.playFail();
+                            }
+                        });
+                    });
+                }
+            },
+            // LEVEL 22
+            {
+                id: 22,
+                title: "Simulador de Regla Práctica de Vuelo",
+                type: "interactive", // 13/20
+                category: "1.1.4 Atmósfera Tipo (ISA)",
+                instruction: "En aviación común (España/Perú) aplicamos una disminución habitual de 2 °C y 1\" de presión por cada 1,000 ft. Configura la pérdida para 3,000 ft.",
+                hint: "Para 3,000 ft: Pérdida Temp = 6 °C, Pérdida Presión = 3\" Hg.",
+                summary: "Los valores más familiares en aviación son: 15ºC y 1013 mb (29.92\") en superficie, y una caída de 2ºC y 1\" por cada 1,000 pies.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-4">
+                            <div class="bg-slate-950 p-6 rounded-2xl border border-sky-400/30 text-center w-80">
+                                <p class="text-xs text-slate-400">Altitud: 3,000 pies</p>
+                                <div class="my-3">
+                                    <span class="text-xs text-amber-300 block">Caída de Temp (2°C / 1000ft)</span>
+                                    <input type="number" id="inp-t-drop" class="bg-slate-900 border border-slate-700 p-2 text-center rounded w-24 font-hud" placeholder="°C">
+                                </div>
+                                <div class="my-3">
+                                    <span class="text-xs text-sky-300 block">Caída de Presión (1" / 1000ft)</span>
+                                    <input type="number" id="inp-p-drop" class="bg-slate-900 border border-slate-700 p-2 text-center rounded w-24 font-hud" placeholder='"Hg'>
+                                </div>
+                                <button id="btn-verify-drop" class="px-6 py-2 bg-sky-500 text-slate-950 font-bold font-hud rounded-xl mt-2">Verificar</button>
+                            </div>
+                        </div>
+                    `;
+                    container.querySelector('#btn-verify-drop').addEventListener('click', () => {
+                        const t = parseInt(container.querySelector('#inp-t-drop').value);
+                        const p = parseInt(container.querySelector('#inp-p-drop').value);
+                        if (t === 6 && p === 3) {
+                            sfx.playBeep(900);
+                            setTimeout(onWin, 500);
+                        } else {
+                            sfx.playFail();
+                        }
+                    });
+                }
+            },
+            // LEVEL 23
+            {
+                id: 23,
+                title: "Navegación en Capa Baja Climatológica",
+                type: "interactive", // 14/20
+                category: "1.1 La Atmósfera",
+                instruction: "Esquiva los núcleos tormentosos de alta humedad concentrados en las capas más bajas.",
+                hint: "El vapor de agua se concentra exclusivamente en las capas más bajas de la atmósfera.",
+                summary: "Las condiciones climatológicas y el vapor de agua afectan principalmente la navegación a baja altitud.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `<canvas id="c23" width="500" height="300"></canvas>`;
+                    const cv = document.getElementById('c23');
+                    const cx = cv.getContext('2d');
+                    let px = 50, py = 150;
+                    let goalX = 450;
+
+                    function render() {
+                        cx.clearRect(0,0,500,300);
+                        // Plane
+                        cx.fillStyle = '#38bdf8';
+                        cx.fillRect(px, py, 30, 15);
+
+                        // Goal
+                        cx.fillStyle = '#10b981';
+                        cx.fillRect(goalX, 100, 20, 100);
+
+                        // Cloud obstacles
+                        cx.fillStyle = '#64748b';
+                        cx.beginPath(); cx.arc(200, 120, 35, 0, Math.PI*2); cx.fill();
+                        cx.beginPath(); cx.arc(320, 180, 40, 0, Math.PI*2); cx.fill();
+
+                        if (px >= goalX) {
+                            sfx.playWin();
+                            setTimeout(onWin, 400);
+                            return;
+                        }
+                        requestAnimationFrame(render);
+                    }
+
+                    cv.addEventListener('mousemove', (e) => {
+                        const r = cv.getBoundingClientRect();
+                        px = e.clientX - r.left;
+                        py = e.clientY - r.top;
+                    });
+                    render();
+                }
+            },
+            // LEVEL 24
+            {
+                id: 24,
+                title: "Rescate de Barómetro Aneroide",
+                type: "interactive", // 15/20
+                category: "1.1.1 Presión Atmosférica",
+                instruction: "Conecta la cápsula aneroide para medir la presión de cabina sin usar mercurio líquido.",
+                hint: "El barómetro aneroide mide la presión atmosférica mediante la deformación de una cápsula metálica al vacío.",
+                summary: "Para medir la presión atmosférica se utilizan barómetros de mercurio, barómetros aneroides u otros instrumentos aerodinámicos.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-4">
+                            <button id="btn-capsule" class="p-8 bg-slate-900 border-4 border-dashed border-sky-400 rounded-full font-hud font-bold text-sky-300 hover:scale-105 transition">
+                                <i class="fa-solid fa-[#0] fa-gauge text-4xl block mb-2"></i>
+                                Calibrar Cápsula Aneroide
+                            </button>
+                        </div>
+                    `;
+                    container.querySelector('#btn-capsule').addEventListener('click', () => {
+                        sfx.playBeep(850);
+                        setTimeout(onWin, 400);
+                    });
+                }
+            },
+            // LEVEL 25
+            {
+                id: 25,
+                title: "Prueba de Vuelo de Alta Densidad",
+                type: "interactive", // 16/20
+                category: "1.1.3 Densidad del Aire",
+                instruction: "Despega en aire frío y denso (mayor rendimiento aerodinámico).",
+                hint: "El aire frío es más denso y ofrece mejor sustentación y rendimiento del motor.",
+                summary: "A mayor densidad del aire, mayor es el número de partículas que generan sustentación en el ala.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-4">
+                            <div class="flex gap-4">
+                                <button class="air-btn p-4 bg-slate-900 border border-slate-700 rounded-2xl text-center hover:border-amber-400" data-ok="false">
+                                    <i class="fa-solid fa-sun text-3xl text-amber-400 block mb-2"></i> Aire CÁLIDO (Poca Densidad)
+                                </button>
+                                <button class="air-btn p-4 bg-slate-900 border border-slate-700 rounded-2xl text-center hover:border-sky-400" data-ok="true">
+                                    <i class="fa-solid fa-snowflake text-3xl text-sky-400 block mb-2"></i> Aire FRÍO (Alta Densidad)
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    container.querySelectorAll('.air-btn').forEach(b => {
+                        b.addEventListener('click', () => {
+                            if (b.dataset.ok === 'true') {
+                                b.classList.add('bg-emerald-600');
+                                sfx.playBeep(850);
+                                setTimeout(onWin, 500);
+                            } else {
+                                b.classList.add('bg-red-600');
+                                sfx.playFail();
+                            }
+                        });
+                    });
+                }
+            },
+            // LEVEL 26
+            {
+                id: 26,
+                title: "Piloto en la Tropopausa",
+                type: "interactive", // 17/20
+                category: "1.1.2 Temperatura del Aire",
+                instruction: "Ajusta la calefacción del avión al alcanzar el techo constante de -56.5 °C a 36,090 ft.",
+                hint: "A altitudes superiores a 11,000 mts la temperatura se mantiene constante en -56.5 °C.",
+                summary: "En la tropopausa y capas superiores, la temperatura permanece invariable a -56.5 °C.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-4">
+                            <div class="bg-slate-950 p-6 rounded-2xl border border-sky-400/30 text-center w-80">
+                                <p class="text-xs text-slate-400">Altitud: 36,090 ft</p>
+                                <div class="font-hud text-3xl text-blue-300 font-bold my-2">-56.5 °C</div>
+                                <button id="btn-heat-sys" class="px-6 py-3 bg-amber-500 text-slate-950 font-hud font-bold rounded-xl mt-2">Activar Anti-Hielo</button>
+                            </div>
+                        </div>
+                    `;
+                    container.querySelector('#btn-heat-sys').addEventListener('click', () => {
+                        sfx.playBeep(900);
+                        setTimeout(onWin, 400);
+                    });
+                }
+            },
+            // LEVEL 27
+            {
+                id: 27,
+                title: "Controlador de Presión Inversa",
+                type: "interactive", // 18/20
+                category: "1.1.1 Presión Atmosférica",
+                instruction: "Ajusta el dial para demostrar la regla: 'A mayor altura, menor presión'.",
+                hint: "La presión cambia de forma inversamente proporcional a la altura.",
+                summary: "La cualidad básica del aire es que la presión atmosférica decrece proporcionalmente conforme se asciende.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-4">
+                            <div class="bg-slate-950 p-6 rounded-2xl border border-sky-400/30 text-center w-80">
+                                <span class="text-xs text-slate-400 block mb-1">Altitud del Avión</span>
+                                <input type="range" id="alt-r" min="0" max="10000" value="0" class="w-full">
+                                <span class="text-xs text-slate-400 block mt-3 mb-1">Presión Registrada</span>
+                                <div id="p-res" class="font-hud text-2xl text-sky-300 font-bold">1013 mb</div>
+                            </div>
+                        </div>
+                    `;
+                    const r = container.querySelector('#alt-r');
+                    const p = container.querySelector('#p-res');
+                    r.addEventListener('input', () => {
+                        const val = parseInt(r.value);
+                        const calcP = Math.max(200, Math.round(1013 - (val / 9)));
+                        p.innerText = `${calcP} mb`;
+                        if (val >= 9000) {
+                            sfx.playBeep(900);
+                            setTimeout(onWin, 500);
+                        }
+                    });
+                }
+            },
+            // LEVEL 28
+            {
+                id: 28,
+                title: "Mapa Mental del Comportamiento Fluido",
+                type: "theory", // 10/10 - Final Theory Level
+                category: "1.1 a 1.1.4 Resumen de Teoría",
+                instruction: "¿Cuáles son las TRES características básicas que definen el comportamiento del aire como fluido?",
+                hint: "Presión, Temperatura y Densidad.",
+                summary: "Las tres características fundamentales que definen el comportamiento del aire como fluido y afectan el vuelo son Presión, Temperatura y Densidad.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="grid grid-cols-2 gap-3 w-full max-w-md">
+                            <button class="m-btn p-4 bg-slate-900 border border-slate-700 rounded-xl font-bold hover:border-sky-400 text-sky-300" data-ok="true">Presión, Temperatura y Densidad</button>
+                            <button class="m-btn p-4 bg-slate-900 border border-slate-700 rounded-xl font-bold hover:border-sky-400" data-ok="false">Velocidad, Humedad y Visibilidad</button>
+                            <button class="m-btn p-4 bg-slate-900 border border-slate-700 rounded-xl font-bold hover:border-sky-400" data-ok="false">Gravedad, Mach y Altitud</button>
+                            <button class="m-btn p-4 bg-slate-900 border border-slate-700 rounded-xl font-bold hover:border-sky-400" data-ok="false">Sustentación, Peso y Empuje</button>
+                        </div>
+                    `;
+                    container.querySelectorAll('.m-btn').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            if (btn.dataset.ok === 'true') {
+                                btn.classList.add('bg-emerald-600');
+                                sfx.playBeep(900);
+                                setTimeout(onWin, 500);
+                            } else {
+                                btn.classList.add('bg-red-600');
+                                sfx.playFail();
+                            }
+                        });
+                    });
+                }
+            },
+            // LEVEL 29
+            {
+                id: 29,
+                title: "Supervivencia de Motor en Airerarefacto",
+                type: "interactive", // 19/20
+                category: "1.1.3 Densidad del Aire",
+                instruction: "El aire en altura tiene menor densidad. Inyecta más mezcla rica en oxígeno para evitar el apague de motor.",
+                hint: "Al ascender, la menor densidad reduce la masa de aire que ingresa al motor.",
+                summary: "La densidad disminuye con la altitud, requiriendo un ajuste adecuado de la mezcla en los motores.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-4">
+                            <div class="bg-slate-950 p-6 rounded-2xl border border-sky-400/30 text-center w-80">
+                                <span class="text-xs text-slate-400 block mb-1">Rendimiento de Combustión</span>
+                                <div id="eng-status" class="font-hud text-xl text-red-400 font-bold mb-3">MEZCLA POBRE</div>
+                                <button id="btn-rich" class="px-6 py-3 bg-amber-500 text-slate-950 font-hud font-bold rounded-xl">Inyectar Mezcla Rica O2</button>
+                            </div>
+                        </div>
+                    `;
+                    container.querySelector('#btn-rich').addEventListener('click', () => {
+                        container.querySelector('#eng-status').innerText = "COMBUSTIÓN ÓPTIMA";
+                        container.querySelector('#eng-status').className = "font-hud text-xl text-emerald-400 font-bold mb-3";
+                        sfx.playBeep(850);
+                        setTimeout(onWin, 500);
+                    });
+                }
+            },
+            // LEVEL 30
+            {
+                id: 30,
+                title: "Examen de Grado: Vuelo Transatmosférico ISA",
+                type: "interactive", // 20/20 - Grand Finale
+                category: "1.1 a 1.1.4 Misión Final",
+                instruction: "Pilota la aeronave a través de los 3 puntos de chequeo ajustando el altímetro a los valores ISA Estándar.",
+                hint: "Asegúrate de recordar: 1013.25 mb / 15 °C / 1.225 Kg/m³.",
+                summary: "¡Felicitaciones! Has demostrado dominio completo del capítulo 1.1 La Atmósfera y la Atmósfera Tipo ISA del Manual de Aviación.",
+                setup: (container, onWin) => {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center gap-4 text-center">
+                            <div class="bg-slate-950 p-6 rounded-2xl border border-amber-400/50 max-w-md">
+                                <i class="fa-solid fa-award text-5xl text-amber-400 mb-3 block"></i>
+                                <h3 class="font-hud text-xl font-bold text-sky-300 mb-2">Chequeo de Cabina Final</h3>
+                                <p class="text-xs text-slate-300 mb-4">Pulsa para validar la configuración de instrumentación ISA para el despegue final.</p>
+                                <button id="btn-final-fly" class="px-8 py-3 bg-sky-500 hover:bg-sky-400 text-slate-950 font-hud font-bold text-lg rounded-xl shadow-xl shadow-sky-500/30">
+                                    ¡DESPEGA Y GRADÚATE!
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    container.querySelector('#btn-final-fly').addEventListener('click', () => {
+                        sfx.playWin();
+                        setTimeout(onWin, 500);
+                    });
+                }
+            }
+        ];
+
+        // --- GAME STATE MANAGER ---
+        // Perfil + progreso persistente en el navegador.
+        const STORAGE_KEY = 'aerotest_progress_v2';
+
+        let gameState = {
+            player: {
+                name: '',
+                aircraft: 'Caza',
+                createdAt: null
+            },
+            unlockedLevel: 1,
+            currentLevel: 1,
+            stars: {},          // { levelId: 0..3 }
+            scores: {},         // { levelId: best score }
+            attempts: {},       // { levelId: attempts }
+            completed: {},      // { levelId: true }
+            totalScore: 0,
+            lastPlayed: null
+        };
+
+        function normalizeState(raw) {
+            return {
+                ...gameState,
+                ...raw,
+                player: { ...gameState.player, ...(raw?.player || {}) },
+                stars: raw?.stars || {},
+                scores: raw?.scores || {},
+                attempts: raw?.attempts || {},
+                completed: raw?.completed || {},
+                totalScore: Number(raw?.totalScore || 0)
+            };
+        }
+
+        function loadProgress() {
+            const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('aerotest_progress');
+            if (saved) {
+                try {
+                    gameState = normalizeState(JSON.parse(saved));
+                } catch(e) {
+                    console.warn('No se pudo cargar el progreso.');
+                }
+            }
+        }
+
+        function saveProgress() {
+            gameState.lastPlayed = new Date().toISOString();
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(gameState));
+            // Mantiene compatibilidad con versiones anteriores.
+            localStorage.setItem('aerotest_progress', JSON.stringify(gameState));
+        }
+
+        function getTotalStars() {
+            return Object.values(gameState.stars).reduce((a, b) => a + Number(b || 0), 0);
+        }
+
+        function getCompletedCount() {
+            return Object.keys(gameState.completed).filter(id => gameState.completed[id]).length;
+        }
+
+        function getProgressPercent() {
+            return Math.round((getCompletedCount() / LEVELS.length) * 100);
+        }
+
+        function getRank() {
+            const score = gameState.totalScore;
+            if (score >= 24000) return 'COMANDANTE';
+            if (score >= 18000) return 'TENIENTE';
+            if (score >= 12000) return 'SUBTENIENTE';
+            if (score >= 7000) return 'CADETE AVANZADO';
+            if (score >= 3000) return 'CADETE';
+            return 'ASPIRANTE';
+        }
+
+        function calculateLevelScore(lvl, stars) {
+            const base = lvl.type === 'theory' ? 800 : 1000;
+            const starBonus = stars * 150;
+            const speedBonus = 0; // reservado para futuras pruebas cronometradas
+            return base + starBonus + speedBonus;
+        }
+
+        // UI DOM References
+        const viewMap = document.getElementById('view-map');
+        const viewGame = document.getElementById('view-game');
+        const mapNodesContainer = document.getElementById('map-nodes-container');
+        const totalStarsDisplay = document.getElementById('total-stars');
+        const currentLevelDisplay = document.getElementById('current-level-display');
+        const totalScoreDisplay = document.getElementById('total-score');
+        const playerNameShort = document.getElementById('player-name-short');
+        const mapProgressText = document.getElementById('map-progress-text');
+        const mapProgressBar = document.getElementById('map-progress-bar');
+        const completedCountDisplay = document.getElementById('completed-count');
+        const totalStarsMap = document.getElementById('total-stars-map');
+        const playerRank = document.getElementById('player-rank');
+
+        const gameLevelTag = document.getElementById('game-level-tag');
+        const gameTitle = document.getElementById('game-title');
+        const gameInstruction = document.getElementById('game-instruction');
+        const gamePlayground = document.getElementById('game-playground');
+        const gameToast = document.getElementById('game-toast');
+
+        const modalResult = document.getElementById('modal-result');
+        const modalTitle = document.getElementById('modal-title');
+        const modalSummaryText = document.getElementById('modal-summary-text');
+        const modalScore = document.getElementById('modal-score');
+        const modalRecord = document.getElementById('modal-record');
+        const modalProgress = document.getElementById('modal-progress');
+        const btnModalRetry = document.getElementById('btn-modal-retry');
+        const btnModalNext = document.getElementById('btn-modal-next');
+
+        const modalProfile = document.getElementById('modal-profile');
+        const playerNameInput = document.getElementById('player-name-input');
+        const playerAircraftInput = document.getElementById('player-aircraft-input');
+        const btnProfile = document.getElementById('btn-profile');
+        const btnSaveProfile = document.getElementById('btn-save-profile');
+        const btnResetProgress = document.getElementById('btn-reset-progress');
+
+        function updateHUD() {
+            totalStarsDisplay.innerText = getTotalStars();
+            totalScoreDisplay.innerText = gameState.totalScore.toLocaleString();
+            playerNameShort.innerText = gameState.player.name || 'Cadete';
+            playerRank.innerText = getRank();
+            const completed = getCompletedCount();
+            const pct = getProgressPercent();
+            mapProgressText.innerText = `${completed} / ${LEVELS.length} niveles`;
+            mapProgressBar.style.width = `${pct}%`;
+            completedCountDisplay.innerText = completed;
+            totalStarsMap.innerText = getTotalStars();
+        }
+
+        function openProfile() {
+            playerNameInput.value = gameState.player.name || '';
+            playerAircraftInput.value = gameState.player.aircraft || 'Caza';
+            modalProfile.classList.remove('hidden');
+        }
+
+        function saveProfile() {
+            const name = playerNameInput.value.trim();
+            if (!name) {
+                playerNameInput.focus();
+                playerNameInput.classList.add('border-red-500');
+                setTimeout(() => playerNameInput.classList.remove('border-red-500'), 800);
+                return;
+            }
+            gameState.player.name = name;
+            gameState.player.aircraft = playerAircraftInput.value;
+            gameState.player.createdAt ||= new Date().toISOString();
+            saveProgress();
+            modalProfile.classList.add('hidden');
+            updateHUD();
+            renderMap();
+        }
+
+        // Renderiza una ruta tipo mapa de campaña, con estados:
+        // bloqueado -> disponible -> completado.
+        function renderMap() {
+            mapNodesContainer.innerHTML = '';
+            updateHUD();
+
+            LEVELS.forEach((lvl, idx) => {
+                const isUnlocked = lvl.id <= gameState.unlockedLevel;
+                const completed = !!gameState.completed[lvl.id];
+                const stars = gameState.stars[lvl.id] || 0;
+                const bestScore = gameState.scores[lvl.id] || 0;
+                const isTheory = lvl.type === 'theory';
+
+                const node = document.createElement('div');
+                node.className = `relative flex flex-col items-center cursor-pointer transition transform hover:scale-110 ${isUnlocked ? '' : 'opacity-50 pointer-events-none'} ${completed ? 'map-node-completed' : ''}`;
+
+                let btnBg = isTheory ?
+                    (isUnlocked ? 'bg-amber-500 border-amber-300 text-slate-950 shadow-amber-500/40' : 'bg-slate-800 border-slate-700 text-slate-500') :
+                    (isUnlocked ? 'bg-sky-500 border-sky-300 text-slate-950 shadow-sky-500/40' : 'bg-slate-800 border-slate-700 text-slate-500');
+
+                if (completed) btnBg = 'bg-emerald-600 border-emerald-300 text-white shadow-emerald-500/40';
+                if (lvl.id === gameState.unlockedLevel && isUnlocked && !completed) {
+                    btnBg += ' node-pulse ring-4 ring-sky-400/50';
+                }
+
+                node.innerHTML = `
+                    <div class="w-14 h-14 rounded-2xl border-2 ${btnBg} flex flex-col items-center justify-center font-hud font-bold shadow-lg relative">
+                        <span class="text-sm">${lvl.id}</span>
+                        <i class="fa-solid ${isTheory ? 'fa-book-open text-xs' : 'fa-plane text-xs'} opacity-80"></i>
+                        ${!isUnlocked ? '<i class="fa-solid fa-lock text-xs absolute -top-1 -right-1 bg-slate-900 p-1 rounded-full text-slate-400 border border-slate-700"></i>' : ''}
+                    </div>
+                    <div class="flex text-amber-400 text-xs mt-1 space-x-0.5">
+                        <i class="fa-${stars >= 1 ? 'solid' : 'regular'} fa-star"></i>
+                        <i class="fa-${stars >= 2 ? 'solid' : 'regular'} fa-star"></i>
+                        <i class="fa-${stars >= 3 ? 'solid' : 'regular'} fa-star"></i>
+                    </div>
+                    <span class="text-[10px] text-slate-400 mt-1 max-w-24 truncate">${completed ? bestScore.toLocaleString() + ' pts' : (isUnlocked ? 'Disponible' : 'Bloqueado')}</span>
+                `;
+
+                node.title = `${lvl.title} — ${completed ? 'Completado' : isUnlocked ? 'Disponible' : 'Bloqueado'}`;
+                node.addEventListener('click', () => {
+                    if (isUnlocked) startLevel(lvl.id);
+                });
+
+                mapNodesContainer.appendChild(node);
+            });
+        }
+
+        // Start a specific level
+        function startLevel(lvlId) {
+            const lvl = LEVELS.find(l => l.id === lvlId);
+            if (!lvl) return;
+
+            gameState.currentLevel = lvlId;
+            gameState.attempts[lvlId] = (gameState.attempts[lvlId] || 0) + 1;
+            saveProgress();
+
+            viewMap.classList.add('hidden');
+            viewGame.classList.remove('hidden');
+            viewGame.classList.add('flex');
+
+            currentLevelDisplay.innerText = `${lvl.id} / 30`;
+            gameTitle.innerText = lvl.title;
+            gameInstruction.innerText = lvl.instruction;
+
+            if (lvl.type === 'theory') {
+                gameLevelTag.innerText = "TEORÍA INTERACTIVA (BRAIN TEST)";
+                gameLevelTag.className = "text-xs uppercase px-3 py-1 rounded-full font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30";
+            } else {
+                gameLevelTag.innerText = "ACCIÓN / SIMULACIÓN INTERACTIVA";
+                gameLevelTag.className = "text-xs uppercase px-3 py-1 rounded-full font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30";
+            }
+
+            gamePlayground.innerHTML = '';
+            gameToast.classList.add('hidden');
+
+            // Setup game content
+            lvl.setup(gamePlayground, () => onLevelComplete(lvl));
+        }
+
+        // Level Complete handler: puntaje, estrellas, récord y desbloqueo.
+        function onLevelComplete(lvl) {
+            sfx.playWin();
+
+            const starsAwarded = 3;
+            const earned = calculateLevelScore(lvl, starsAwarded);
+            const previousBest = Number(gameState.scores[lvl.id] || 0);
+            const isFirstCompletion = !gameState.completed[lvl.id];
+
+            gameState.stars[lvl.id] = Math.max(Number(gameState.stars[lvl.id] || 0), starsAwarded);
+            gameState.scores[lvl.id] = Math.max(previousBest, earned);
+
+            // Los puntos solo se suman una vez por nivel; repetir sirve para mejorar el récord.
+            if (isFirstCompletion) gameState.totalScore += earned;
+
+            gameState.completed[lvl.id] = true;
+
+            if (lvl.id === gameState.unlockedLevel && lvl.id < LEVELS.length) {
+                gameState.unlockedLevel = lvl.id + 1;
+            }
+
+            saveProgress();
+            updateHUD();
+
+            const recordText = previousBest > 0
+                ? `${Math.max(previousBest, earned).toLocaleString()} pts`
+                : `${earned.toLocaleString()} pts`;
+
+            modalTitle.innerText = `¡Nivel ${lvl.id} Superado!`;
+            modalSummaryText.innerText = lvl.summary;
+            modalScore.innerText = isFirstCompletion ? `+${earned.toLocaleString()}` : '+0';
+            modalRecord.innerText = recordText;
+            modalProgress.innerText = `${getProgressPercent()}%`;
+            btnModalNext.innerHTML = lvl.id < LEVELS.length
+                ? 'Siguiente Nivel <i class="fa-solid fa-arrow-right ml-1"></i>'
+                : 'Volver al Mapa <i class="fa-solid fa-map ml-1"></i>';
+
+            modalResult.classList.remove('hidden');
+        }
+
+        // Navigation & Buttons
+        document.getElementById('btn-back-to-map').addEventListener('click', () => {
+            viewGame.classList.add('hidden');
+            viewGame.classList.remove('flex');
+            viewMap.classList.remove('hidden');
+            renderMap();
+        });
+
+        document.getElementById('btn-restart').addEventListener('click', () => {
+            startLevel(gameState.currentLevel);
+        });
+
+        document.getElementById('btn-hint').addEventListener('click', () => {
+            const lvl = LEVELS.find(l => l.id === gameState.currentLevel);
+            if (lvl) {
+                gameToast.innerText = `💡 Pista: ${lvl.hint}`;
+                gameToast.className = "absolute bottom-4 px-6 py-3 rounded-xl font-bold text-center border border-amber-500/50 bg-amber-950/90 text-amber-300 shadow-xl";
+                gameToast.classList.remove('hidden');
+                sfx.playBeep(600);
+            }
+        });
+
+        btnModalRetry.addEventListener('click', () => {
+            modalResult.classList.add('hidden');
+            startLevel(gameState.currentLevel);
+        });
+
+        btnModalNext.addEventListener('click', () => {
+            modalResult.classList.add('hidden');
+            if (gameState.currentLevel < 30) {
+                startLevel(gameState.currentLevel + 1);
+            } else {
+                // Return to map on finishing level 30
+                viewGame.classList.add('hidden');
+                viewGame.classList.remove('flex');
+                viewMap.classList.remove('hidden');
+                renderMap();
+            }
+        });
+
+        // Perfil
+        btnProfile.addEventListener('click', openProfile);
+        btnSaveProfile.addEventListener('click', saveProfile);
+        playerNameInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') saveProfile();
+        });
+
+        btnResetProgress.addEventListener('click', () => {
+            const ok = confirm('¿Seguro que quieres borrar el perfil y todo el progreso?');
+            if (!ok) return;
+            localStorage.removeItem(STORAGE_KEY);
+            localStorage.removeItem('aerotest_progress');
+            gameState = normalizeState({
+                player: { name: '', aircraft: 'Caza', createdAt: null },
+                unlockedLevel: 1,
+                currentLevel: 1,
+                stars: {},
+                scores: {},
+                attempts: {},
+                completed: {},
+                totalScore: 0
+            });
+            modalProfile.classList.add('hidden');
+            updateHUD();
+            renderMap();
+            openProfile();
+        });
+
+        // Initialize App
+        loadProgress();
+        updateHUD();
+        renderMap();
+
+        // Primer acceso: registrar al cadete.
+        if (!gameState.player.name) {
+            setTimeout(openProfile, 250);
+        }
+    </script>
+</body>
+</html>
